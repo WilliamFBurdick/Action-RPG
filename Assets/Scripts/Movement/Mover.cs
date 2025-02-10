@@ -4,13 +4,17 @@ using System.Collections.Generic;
 using RPG.Core;
 using UnityEngine;
 using UnityEngine.AI;
+using RPG.Saving;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
+using RPG.Attributes;
 
 namespace RPG.Movement
 {
-    public class Mover : MonoBehaviour, IAction
+    public class Mover : MonoBehaviour, IAction, IJsonSaveable
     {
         [SerializeField] Transform target;
-        [SerializeField] float maxSpeed = 6f;
+        [SerializeField] float maxSpeed = 6f, maxNavPathLength = 40f;
 
         NavMeshAgent agent;
         Health health;
@@ -35,6 +39,16 @@ namespace RPG.Movement
             MoveTo(destination, speedFraction);
         }
 
+        public bool CanMoveTo(Vector3 destination)
+        {
+            NavMeshPath path = new NavMeshPath();
+            bool hasPath = NavMesh.CalculatePath(transform.position, destination, NavMesh.AllAreas, path);
+            if (!hasPath) return false;
+            if (path.status != NavMeshPathStatus.PathComplete) return false;
+            if (GetPathLength(path) > maxNavPathLength) return false;
+            return true;
+        }
+
         public void MoveTo(Vector3 destination, float speedFraction)
         {
             agent.destination = destination;
@@ -51,6 +65,31 @@ namespace RPG.Movement
         {
             Vector3 localVelocity = transform.InverseTransformDirection(agent.velocity);
             anim.SetFloat("forwardSpeed", localVelocity.z);
+        }
+
+        private float GetPathLength(NavMeshPath path)
+        {
+            float total = 0f;
+            if (path.corners.Length < 2) return total;
+            for (int i = 0; i < path.corners.Length - 1; i++)
+            {
+                float distance = Vector3.Distance(path.corners[i], path.corners[i + 1]);
+                total += distance;
+            }
+            return total;
+        }
+
+        public JToken CaptureAsJToken()
+        {
+            return transform.position.ToToken();
+        }
+
+        public void RestoreFromJToken(JToken state)
+        {
+            agent.enabled = false;
+            transform.position = state.ToVector3();
+            agent.enabled = true;
+            GetComponent<ActionScheduler>().CancelCurrentAction();
         }
     }
 }
